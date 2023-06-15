@@ -1,0 +1,85 @@
+﻿@page "/fulldiary"
+@using cwzpgpract.Data
+@using cwzpgpract.DB
+@using Microsoft.AspNetCore.SignalR.Client
+@using Microsoft.EntityFrameworkCore;
+@inject NavigationManager NavigationManager
+
+<div style="font-size:larger">
+    <h3>Дневник</h3>
+
+    @foreach (var entity in entities)
+    {
+        <p>@entity</p>
+    }
+
+    <button @onclick="LoadMore">Загрузить больше</button>
+</div>
+
+@code {
+    private List<string> entities = new List<string>();
+    private int pageSize = 10;
+    private int pageNumber = 1;
+
+    private HubConnection? hubConnection;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadEntities();
+
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(NavigationManager.ToAbsoluteUri("/RHub"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        await base.OnInitializedAsync();
+    }
+
+    private async Task LoadEntities()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<MyDbContext>();
+        optionsBuilder.UseNpgsql("Postgres");
+        var dbContext = new MyDbContext(optionsBuilder.Options);
+        // Fetch entities from your database based on the current page number and page size
+        List<string> newEntities = await dbContext.Journals
+            .OrderByDescending(x => x.Id)
+            .Skip((pageNumber - 1) * pageSize)
+            .Take(pageSize)
+            .Select(x => x.Happening ?? "")
+            .ToListAsync();
+        entities.AddRange(newEntities);
+    }
+
+    private async Task LoadMore()
+    {
+        pageNumber++;
+        await LoadEntities();
+        StateHasChanged();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            hubConnection?.On<List<string>>("RecieveAllEntries", (entity) =>
+            {
+                entities = entity;
+
+                InvokeAsync(StateHasChanged);
+            });
+
+            await hubConnection.StartAsync();
+            await hubConnection.SendAsync("RecieveAllEntries");
+        }
+
+        await base.OnAfterRenderAsync(firstRender);
+    }
+
+    public async ValueTask DisposableAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+}

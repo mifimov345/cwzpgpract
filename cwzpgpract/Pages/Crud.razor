@@ -1,0 +1,356 @@
+﻿@page "/Crud"
+@using cwzpgpract.Data
+@using cwzpgpract.DB
+@using cwzpgpract.Hubs
+@using Microsoft.EntityFrameworkCore
+@using Microsoft.AspNetCore.SignalR.Client
+@inject MainMenuDataService DataMainMenu
+@inject NavigationManager NavigationManager
+@inject IHubContext<RHub> MyHubContext
+
+<h3>Crud</h3>
+
+<h3>Добавить или Удалить объект из базы данных</h3>
+
+<div style="font-size:larger">
+    <label for="entityType">Выбранный тип элемента:</label>
+    <select id="entityType" @bind="@selectedEntityType">
+        <option value="Location">Локация</option>
+        <option value="Item">Предмет</option>
+        <option value="NPC">Неигровой персонаж</option>
+    </select>
+</div>
+
+@if (selectedEntityType == "Location")
+{
+    <div style="font-size:larger">
+        <h4>Добавить локацию</h4>
+        <label for="LocNameInput">Добавьте имя</label>
+        <input type="text" id="NpcNameInput" @bind="@newLocation.Name" required />
+        <button type="submit" @onclick="AddLocation" disabled="@IsButtonLocationDisabled()">Добавить</button>
+    </div>
+
+    <div style="font-size:larger">
+        <h4>Список локаций</h4>
+        <table>
+            <tbody>
+                @if (locList != null && locList.Count > 0)
+                {
+                    @foreach (var location in locList)
+                    {
+                        <tr>
+                            <td>@location.Name</td>
+                            <td><button @onclick="() => DeleteLocation(location.Id)">Удалить</button></td>
+                        </tr>
+                    }
+                }
+                else
+                {
+                    <tr>
+                        <td>Пока что нет локаций для изменения или удаления</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (selectedEntityType == "Item")
+{
+    <div style="font-size:larger">
+        <h4>Добавить предмет</h4>
+        <label for="ItemNameInput">Добавьте имя</label>
+        <input type="text" id="ItemNameInput" @bind="@newItem.Name" required />
+        <label for="ItemDescInput">Добавьте описание</label>
+        <input type="text" id="ItemDescInput" @bind="@newItem.Description" required />
+        <select @bind="@selectedLocationName" required>
+            <option value="">Выберите локацию для предмета</option>
+            @foreach (var ilc in locListAll)
+            {
+                <option value="@ilc.Name">@ilc.Name</option>
+            }
+        </select>
+        <button type="submit" @onclick="AddItem" disabled="@IsButtonItemDisabled()">Добавить</button>
+    </div>
+
+    <div style="font-size:larger">
+        <h4>Список предметов</h4>
+        <table>
+            <tbody>
+                @if (itemList != null && itemList.Count > 0)
+                {
+                    @foreach (var item in itemList)
+                    {
+                        <tr>
+                            <td>@item.Name</td>
+                            <td><button @onclick="() => DeleteItem(item.Id)">Удалить</button></td>
+                        </tr>
+                    }
+                }
+                else
+                {
+                    <tr>
+                        <td>Пока что нет предметов для изменения или удаления</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (selectedEntityType == "NPC")
+{
+    <div style="font-size:larger">
+        <h4>Добавить неигрового персонажа</h4>
+        <label for="NpcNameInput">Добавьте имя</label>
+        <input type="text" id="NpcNameInput" @bind="@newNPC.Name" required />
+        <select @bind="@selectedLocationName2" required>
+            <option value="">Выберите локацию для неигрового персонажа</option>
+            @foreach (var nlc in locListAll)
+            {
+                <option value="@nlc.Name">@nlc.Name</option>
+            }
+        </select>
+        <select @bind="@SelectedItemName" required>
+            <option value="">Выберите награду внутриигрового персонажа</option>
+            @foreach (var nit in itemListAll)
+            {
+                <option value="@nit.Name">@nit.Name</option>
+            }
+        </select>
+        <button type="submit" @onclick="AddNPC" disabled="@IsButtonNpcDisabled()">Добавить</button>
+    </div>
+
+    <div style="font-size:larger">
+        <h4>Список неигровых персонажей</h4>
+        <table>
+            <tbody>
+                @if (npcList != null && npcList.Count > 0)
+                {
+                    @foreach (var npc in npcList)
+                    {
+                        <tr>
+                            <td>@npc.Name</td>
+                            <td><button @onclick="() => DeleteNPC(npc.Id)">Удалить</button></td>
+                        </tr>
+                    }
+                }
+                else
+                {
+                    <tr>
+                        <td>Пока что нет неигровых персонажей для изменения или удаления</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private string selectedEntityType = "Location";
+    private Location newLocation = new Location();
+    private Item newItem = new Item();
+    private NPC newNPC = new NPC();
+    private HubConnection? hubConnection;
+
+    private string ItemLoc { get; set; }
+    private string NpcItem { get; set; }
+    private string NpcLoc { get; set; }
+    private string ItemTempName { get; set; }
+    private string ItemTempDesc { get; set; }
+    private string LocTempItem { get; set; }
+    private string NpcTempName { get; set; }
+
+    private string selectedLocationName;
+    private Location SelectedLocation => locListAll.FirstOrDefault(loc => loc.Name == selectedLocationName);
+    private string selectedLocationName2;
+    private Location SelectedLocation2 => locListAll.FirstOrDefault(loc => loc.Name == selectedLocationName2);
+    private string SelectedItemName;
+    private Item SelectedItem => itemListAll.FirstOrDefault(item => item.Name == SelectedItemName);
+
+
+
+    private string chosenItem { get; set; }
+
+    private string chosenLoc { get; set; }
+
+    public List<Location> locList { get; set; } = new List<Location>();
+    public List<Item> itemList { get; set; } = new List<Item>();
+    public List<NPC> npcList { get; set; } = new List<NPC>();
+    public List<Location> locListAll { get; set; } = new List<Location>();
+    public List<Item> itemListAll { get; set; } = new List<Item>();
+
+    MyDbContext? dbContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<MyDbContext>();
+        optionsBuilder.UseNpgsql("Postgres");
+        dbContext = new MyDbContext(optionsBuilder.Options);
+
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(NavigationManager.ToAbsoluteUri("/CHub"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        hubConnection.On<List<Location>>("RecieveDataL", recievedData =>
+        {
+            locList = recievedData;
+
+            InvokeAsync(StateHasChanged);
+        });
+        hubConnection.On<List<Item>>("RecieveDataI", recievedData =>
+        {
+            itemList = recievedData;
+
+            InvokeAsync(StateHasChanged);
+        });
+        hubConnection.On<List<NPC>>("RecieveDataN", recievedData =>
+        {
+            npcList = recievedData;
+
+            InvokeAsync(StateHasChanged);
+        });
+        hubConnection.On<List<Location>>("RecieveAllL", receivedData =>
+        {
+            locListAll = receivedData;
+
+            InvokeAsync(StateHasChanged);
+        });
+        hubConnection.On<List<Item>>("RecieveAllI", receivedData =>
+        {
+            itemListAll = receivedData;
+
+            InvokeAsync(StateHasChanged);
+        });
+
+        await hubConnection.StartAsync();
+        await hubConnection.SendAsync("RecieveDataL");
+        await hubConnection.SendAsync("RecieveDataI");
+        await hubConnection.SendAsync("RecieveDataN");
+        await hubConnection.SendAsync("RecieveAllL");
+        await hubConnection.SendAsync("RecieveAllI");
+    }
+
+    private async void AddLocation()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<MyDbContext>();
+        optionsBuilder.UseNpgsql("Postgres");
+        var dbContext = new MyDbContext(optionsBuilder.Options);
+        dbContext.Locations.Add(newLocation);
+        await dbContext.SaveChangesAsync();
+        NavigationManager.NavigateTo(NavigationManager.Uri, forceLoad: true);
+    }
+
+    private async void DeleteLocation(int id)
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<MyDbContext>();
+        optionsBuilder.UseNpgsql("Postgres");
+        var dbContext = new MyDbContext(optionsBuilder.Options);
+        var delL = dbContext.Locations.FirstOrDefault(x => x.Id == id);
+        dbContext.Locations.Remove(delL);
+        await dbContext.SaveChangesAsync();
+        NavigationManager.NavigateTo(NavigationManager.Uri, forceLoad: true);
+        
+    }
+
+    private async void AddItem()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<MyDbContext>();
+        optionsBuilder.UseNpgsql("Postgres");
+        var dbContext = new MyDbContext(optionsBuilder.Options);
+        newItem.Location_ = SelectedLocation;
+        dbContext.Items.Add(newItem);
+        await dbContext.SaveChangesAsync();
+        NavigationManager.NavigateTo(NavigationManager.Uri, forceLoad: true);
+    }
+
+    private async void DeleteItem(int id)
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<MyDbContext>();
+        optionsBuilder.UseNpgsql("Postgres");
+        var dbContext = new MyDbContext(optionsBuilder.Options);
+        var delI = dbContext.Items.FirstOrDefault(x => x.Id == id);
+        dbContext.Items.Remove(delI);
+        await dbContext.SaveChangesAsync();
+        NavigationManager.NavigateTo(NavigationManager.Uri, forceLoad: true);
+    }
+
+    private async void AddNPC()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<MyDbContext>();
+        optionsBuilder.UseNpgsql("Postgres");
+        var dbContext = new MyDbContext(optionsBuilder.Options);
+        newNPC.Location_ = SelectedLocation2;
+        newNPC.Reward = SelectedItem;
+        dbContext.NPCS.Add(newNPC);
+        await dbContext.SaveChangesAsync();
+        NavigationManager.NavigateTo(NavigationManager.Uri, forceLoad: true);
+    }
+
+    private async void DeleteNPC(int id)
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<MyDbContext>();
+        optionsBuilder.UseNpgsql("Postgres");
+        var dbContext = new MyDbContext(optionsBuilder.Options);
+        var delN = dbContext.NPCS.FirstOrDefault(x => x.Id == id);
+        dbContext.NPCS.Remove(delN);
+        await dbContext.SaveChangesAsync();
+        NavigationManager.NavigateTo(NavigationManager.Uri, forceLoad: true);
+    }
+
+    public bool IsConnected => hubConnection?.State == HubConnectionState.Connected;
+
+    public async ValueTask DisposableAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+
+    private bool IsButtonItemDisabled()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<MyDbContext>();
+        optionsBuilder.UseNpgsql("Postgres");
+        using (var dbContext = new MyDbContext(optionsBuilder.Options))
+        {
+            List<string> names = dbContext.Items
+                .Select(x => x.Name ?? "")
+                .ToList();
+
+            return string.IsNullOrWhiteSpace(newItem.Name) ||
+                string.IsNullOrWhiteSpace(newItem.Description) ||
+                string.IsNullOrWhiteSpace(selectedLocationName) ||
+                names.Contains(newItem.Name);
+        }
+    }
+    private bool IsButtonLocationDisabled()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<MyDbContext>();
+        optionsBuilder.UseNpgsql("Postgres");
+        using (var dbContext = new MyDbContext(optionsBuilder.Options))
+        {
+            List<string> names = dbContext.Locations
+            .Select(x => x.Name ?? "")
+            .ToList();
+            return string.IsNullOrWhiteSpace(newLocation.Name) ||
+            names.Contains(newLocation.Name);
+        }
+    }
+    private bool IsButtonNpcDisabled()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<MyDbContext>();
+        optionsBuilder.UseNpgsql("Postgres");
+        using (var dbContext = new MyDbContext(optionsBuilder.Options))
+        {
+            List<string> names = dbContext.NPCS
+            .Select(x => x.Name ?? "")
+            .ToList();
+            return string.IsNullOrWhiteSpace(newNPC.Name) ||
+            string.IsNullOrWhiteSpace(selectedLocationName2) ||
+            string.IsNullOrWhiteSpace(SelectedItemName) ||
+            names.Contains(newNPC.Name);
+        }
+    }
+}

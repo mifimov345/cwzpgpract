@@ -1,0 +1,60 @@
+﻿@page "/pgdesc"
+@using cwzpgpract.Data
+@using cwzpgpract.DB
+@using Microsoft.EntityFrameworkCore
+@using System.IO
+@using ClosedXML.Excel
+@using Microsoft.AspNetCore.Mvc
+@inject IJSRuntime JSRuntime
+
+<h3>Руководство пользователя</h3>
+<div style="font-size:xx-large">
+    <label>
+        Добро пожаловать в игру 'Fools Walk', игрок!
+        Жанр данной игры - ZPG или же Zero Player Game, что переводится как 'игра с нулем игроков', это означает,
+        что основной геймплей сводится к наблюдению за игровым персонажем, при желании ограниченно
+        взаимодействуя с ним.
+        Главный герой - шут, изгнанный из дворца от его творческого кризиса, он путешествует по локациям
+        королевства и взаимодействует с ними. Все ситуации генерируются случайно автоматическим образом.
+        Все, что может делать игрок кроме наблюдения за последними событиями на первой вкладке или
+        прочтения всех событий в журнале ( находящемся во второй вкладке), вы также можете подсказать шуту
+        при помощи интерактивного меню на первой вкладке или обновить имеющиеся локации/предметы/
+        неигровых персонажей, или же NPC на четвертой вкладке. Внимание! Удалить или изменить возможно
+        только уже созданный элемент, изначальный набор данных изменениям не подлежит!
+    </label>
+    <button onclick="@Download">Выгрузить отчет</button>
+</div>
+
+@code {
+
+    private async Task Download()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<MyDbContext>();
+        optionsBuilder.UseNpgsql("Postgres");
+        var dbContext = new MyDbContext(optionsBuilder.Options);
+
+        var workbook = new XLWorkbook();
+        var worksheet = workbook.Worksheets.Add("Sheet1");
+
+        var fulljournal = dbContext.Journals.OrderBy(x => x.Id).ToList();
+        int counter = 1;
+
+        foreach (var jour in fulljournal)
+        {
+            worksheet.Cell(counter, 1).Value = jour.Happening;
+            counter++;
+        }
+
+        byte[] workbookData;
+        using (var stream = new MemoryStream())
+        {
+            workbook.SaveAs(stream);
+            workbookData = stream.ToArray();
+        }
+
+        string base64Workbook = Convert.ToBase64String(workbookData);
+
+        await JSRuntime.InvokeVoidAsync("saveAsFile", "report.xlsx", base64Workbook, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+
+    }
+}

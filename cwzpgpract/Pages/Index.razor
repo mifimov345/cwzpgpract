@@ -1,0 +1,197 @@
+﻿@page "/"
+@using Microsoft.EntityFrameworkCore;
+@using cwzpgpract.Data
+@using cwzpgpract.DB
+@using cwzpgpract.Hubs
+@using Microsoft.AspNetCore.SignalR.Client
+@inject MainMenuDataService DataMainMenu
+@inject NavigationManager NavigationManager
+@inject RHub MyHubContext
+
+
+<PageTitle>Главное меню</PageTitle>
+<div style="font-size:xx-large">
+    <label>История шута по имени @player.Name</label>
+</div>
+
+<div style="position:relative;top:50px; font-size:large">
+    <form>
+    <label for="actingDropdown">Глагол:</label>
+    <select id="actingDropdown" @bind="@SelectedActing">
+        <option value="">Выберите глагол</option>
+        @foreach (var item in ActingItems)
+        {
+            <option value="@item">@item</option>
+        }
+    </select>
+
+    <br />
+
+    <label for="pretexingDropdown">Предлог:</label>
+    <select id="pretexingDropdown" @bind="@SelectedPretexing">
+            <option value="">Выберите предлог</option>
+        @foreach (var item in PretexingItems)
+        {
+            <option value="@item">@item</option>
+        }
+    </select>
+
+    <br />
+
+    <label for="particleInput">Добавьте окончание:</label>
+    <input type="text" id="particleInput" @bind="@Particle" required />
+
+    <br />
+
+    <button type="submit" onclick="@sendhint">Submit</button>
+</form>
+    <div style="position:relative;left:500px;bottom:150px">
+        <h3>Последние действия:</h3>
+
+    @if (entries != null && entries.Count > 0)
+    {
+        foreach (var entry in entries)
+        {
+            <li>@entry</li>
+        }
+    }
+    else
+    {
+        <li>No entries found</li>
+    }
+    </div>
+</div>
+
+@code {
+    private string SelectedActing { get; set; }
+    private string SelectedPretexing { get; set; }
+    private string Particle { get; set; }
+
+    private string[] ActingItems { get; set; }
+    private string[] PretexingItems { get; set; }
+
+    private PlayableChar player { get; set; } = new PlayableChar();
+
+    private List<string> entries { get; set; } = new List<string>();
+
+    private HubConnection? hubConnection;
+
+    MyDbContext? dbContext { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<MyDbContext>();
+        optionsBuilder.UseNpgsql("Postgres");
+        dbContext = new MyDbContext(optionsBuilder.Options);
+
+        player = dbContext.PlayableChars.FirstOrDefault(e => e.Id == 1);
+
+        var data = await DataMainMenu.GetCombosAsync();
+
+        ActingItems = data.Select(x => x.Acting).ToArray();
+        PretexingItems = data.Select(x => x.Pretexing).ToArray();
+
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(NavigationManager.ToAbsoluteUri("/RHub"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        hubConnection.On<List<string>>("ReceiveLastFourEntries", receivedEntries =>
+        {
+            entries = receivedEntries;
+
+            InvokeAsync(StateHasChanged);
+        });
+
+        await hubConnection.StartAsync();
+        await hubConnection.SendAsync("GetLastFourEntries");
+    }
+
+    public bool IsConnected => hubConnection?.State == HubConnectionState.Connected;
+
+    public async ValueTask DisposableAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.DisposeAsync();
+        }
+    }
+
+    private void SetData()
+    {
+
+    }
+
+    public async void sendhint()
+    {
+        var optionsBuilder = new DbContextOptionsBuilder<MyDbContext>();
+        optionsBuilder.UseNpgsql("Postgres");
+        var dbContext = new MyDbContext(optionsBuilder.Options);
+        PlayableChar player_ = dbContext.PlayableChars.FirstOrDefault(e => e.Id == 1);
+        string x = SelectedActing;
+        string y = SelectedPretexing;
+        switch (x)
+        {
+            case "Пойди":
+                var locations_ = dbContext.Locations.OrderBy(x => x.Id).ToList();
+                var lockcheck = dbContext.Locations.FirstOrDefault(x => x.Name == Particle);
+                bool fieldcheck = false;
+                bool isThere = false;
+                foreach (var location in locations_)
+                {
+                    if (location.Name == Particle && location.Items_.Count() < 1 && location.NPC_.Count() < 1)
+                    {
+                        fieldcheck = true;
+                        string hapcheck = $"А что там делать, там же ничего нет!";
+                        Journal journalcheck_ = new Journal() { Happening = hapcheck };
+                        dbContext.Journals.Add(journalcheck_);
+                        isThere = true;
+                        await dbContext.SaveChangesAsync();
+                    }
+                    if (location.Name == Particle && player_.CurLoc != location.Id && fieldcheck == false)
+                    {
+                        string happ = $"А что, пойти в '{location.Name}' звучит как отличная идея";
+                        Journal journal_ = new Journal() { Happening = happ };
+                        dbContext.Journals.Add(journal_);
+                        player_.CurLoc = location.Id;
+                        isThere = true;
+                        await dbContext.SaveChangesAsync();
+                    }
+                    else if (player_.CurLoc == location.Id && fieldcheck == false)
+                    {
+                        string happ2 = $"Так я это, уже в {location.Name}...";
+                        Journal journal_ = new Journal() { Happening = happ2 };
+                        dbContext.Journals.Add(journal_);
+                        isThere = true;
+                        await dbContext.SaveChangesAsync();
+                    }
+                }
+                if (!isThere)
+                {
+                    string happ3 = $"А это {Particle}, это вообще где?";
+                    Journal journal_ = new Journal() { Happening = happ3 };
+                    dbContext.Journals.Add(journal_);
+                    await dbContext.SaveChangesAsync();
+                }
+                break;
+            case "Ограбь":
+                string happ4 = $"Где же это виданно, чтобы шут грабил!";
+                Journal journal2_ = new Journal() { Happening = happ4 };
+                dbContext.Journals.Add(journal2_);
+                await dbContext.SaveChangesAsync();
+                break;
+            case "Сломай":
+                string happ5 = $"Ну раз ты советуешь, как найду {Particle}, то обязательно попробую!";
+                Journal journal3_ = new Journal() { Happening = happ5 };
+                dbContext.Journals.Add(journal3_);
+                await dbContext.SaveChangesAsync();
+                break;
+            case "Заработай":
+                string happ6 = $"Попытаю удачи заработать чуть позже.";
+                Journal journal4_ = new Journal() { Happening = happ6 };
+                dbContext.Journals.Add(journal4_);
+                await dbContext.SaveChangesAsync();
+                break;
+        }
+    }
+}
